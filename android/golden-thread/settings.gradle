@@ -1,0 +1,2 @@
+rootProject.name = "GoldenThread"
+include ":app"

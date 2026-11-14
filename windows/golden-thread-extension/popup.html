@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  body { width: 360px; margin: 0; font: 13px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; background:#14100a; color:#f3e5c0; }
+  header { padding: 10px 14px; border-bottom: 1px solid #d4a017; } header b { color:#ffd968; font-size:15px; }
+  nav { display:flex; gap:6px; padding:8px 14px 0; } nav button { flex:1; }
+  button { background:#241b08; color:#ffd968; border:1px solid #d4a017; border-radius:8px; padding:5px 8px; cursor:pointer; }
+  button:hover { background:#3a2b0d; } section { padding: 10px 14px 14px; display:none; } section.on { display:block; }
+  .dim { color:#b8a888; font-size:12px; } .card { border:1px solid #57451a; border-radius:10px; padding:10px; margin:8px 0; }
+  .opt { display:block; width:100%; text-align:left; margin:4px 0; } .right { border-color:#7ac74f; } .wrong { border-color:#e5534b; }
+  li { margin: 3px 0; } ul { padding-left: 16px; margin: 6px 0; }
+</style></head><body>
+<header><b>✦ Golden Thread</b> <span class="dim">— the OG Wavefront, in gold</span></header>
+<nav>
+  <button data-tab="prune">Prune</button><button data-tab="review">Review</button><button data-tab="enc">Encounters</button><button data-tab="deck">Deck</button>
+</nav>
+<section id="prune" class="on">
+  <div id="prune-head" class="dim"></div>
+  <div id="prune-list"></div>
+  <div class="dim">Ten a day from the muted pool — no follow-back, no aligned interests in the canon, ranked quietest first. Un-follow opens the profile; mark the outcome here and the queue moves on. Keep removes them from the queue for good; snooze parks them 30 days.</div>
+</section>
+<section id="review">
+  <div id="quiz"><span class="dim">Loading the deck…</span></div>
+</section>
+<section id="enc">
+  <div id="enc-summary" class="dim"></div>
+  <ul id="enc-list"></ul>
+  <button id="enc-export">Export log (JSON)</button>
+  <button id="enc-fetch">Copy fetch-latest list</button>
+  <button id="enc-clear">Clear log</button>
+  <div class="dim" style="margin-top:6px">The fetch-latest list is what Emise works from on the next refresh pass.</div>
+</section>
+<section id="deck">
+  <div id="deck-stats"></div>
+  <div class="dim">Interests come from the canon — the OG Wavefront as it stood at the close (2025-06-16). Encounters queue the refresh.</div>
+</section>
+<script src="data/moots.js"></script>
+<script src="popup.js"></script>
+</body></html>
