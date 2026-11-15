@@ -38,8 +38,8 @@ public class RadarService extends AccessibilityService {
     private final android.os.Handler ui = new android.os.Handler(android.os.Looper.getMainLooper());
 
     private static class Post {
-        String handle; Data.Caste caste; Rect rect;
-        Post(String h, Data.Caste c, Rect r) { handle = h; caste = c; rect = r; }
+        String handle; Data.Caste caste; Rect rect; Rect nodeRect;
+        Post(String h, Data.Caste c, Rect r, Rect n) { handle = h; caste = c; rect = r; nodeRect = n; }
     }
     private final List<Post> posts = new ArrayList<>();
     private final List<Rect> avatarCandidates = new ArrayList<>();
@@ -117,19 +117,36 @@ public class RadarService extends AccessibilityService {
         walk(root);
         lastNodes = scanNodes; lastHandles = scanHandles; lastScanAt = now;
         if (fx == null) return;
-        List<EffectsView.Halo> halos = new ArrayList<>();
+        int topZone = (int) (getResources().getDisplayMetrics().heightPixels * 0.10);
+        java.util.Map<String, Post> authorByCell = new java.util.LinkedHashMap<>();
+        java.util.Map<String, Rect> pfpByCell = new java.util.HashMap<>();
         for (Post p : posts) {
-            Rect pfp = null; long bestScore = Long.MAX_VALUE;
-            for (Rect a : avatarCandidates) {
-                if (a.centerX() < p.rect.left || a.centerX() > p.rect.right
-                        || a.centerY() < p.rect.top || a.centerY() > p.rect.bottom) continue;
-                long score = (long) (a.left - p.rect.left) * 4 + (a.top - p.rect.top);
-                if (score < bestScore) { bestScore = score; pfp = a; }
+            if (p.rect.top < topZone) continue;
+            String key = p.rect.left + ":" + p.rect.top + ":" + p.rect.bottom;
+            Rect pfp = pfpByCell.get(key);
+            if (pfp == null) {
+                long bestScore = Long.MAX_VALUE;
+                for (Rect a : avatarCandidates) {
+                    if (a.centerX() < p.rect.left || a.centerX() > p.rect.right
+                            || a.centerY() < p.rect.top || a.centerY() > p.rect.bottom) continue;
+                    long score = (long) (a.left - p.rect.left) * 4 + (a.top - p.rect.top);
+                    if (score < bestScore) { bestScore = score; pfp = a; }
+                }
+                if (pfp == null) continue;
+                pfpByCell.put(key, pfp);
             }
-            if (dbg != null && halos.size() < 14) dbg.append("post @").append(p.handle)
+            Post cur = authorByCell.get(key);
+            if (cur == null) { authorByCell.put(key, p); continue; }
+            long dNew = dist2(p.nodeRect, pfp), dCur = dist2(cur.nodeRect, pfp);
+            if (dNew < dCur) authorByCell.put(key, p);
+        }
+        List<EffectsView.Halo> halos = new ArrayList<>();
+        for (java.util.Map.Entry<String, Post> e : authorByCell.entrySet()) {
+            Post p = e.getValue(); Rect pfp = pfpByCell.get(e.getKey());
+            if (dbg != null) dbg.append("author @").append(p.handle)
+                .append(" node ").append(p.nodeRect.toShortString())
                 .append(" cell ").append(p.rect.toShortString())
-                .append(" pfp ").append(pfp == null ? "NONE" : pfp.toShortString()).append("\n");
-            if (pfp == null) continue;
+                .append(" pfp ").append(pfp.toShortString()).append("\n");
             halos.add(new EffectsView.Halo(p.caste, pfp));
             if ((p.caste == Data.Caste.MOOT || p.caste == Data.Caste.ALIGNED)
                     && celebrated.add(p.handle.toLowerCase())) {
@@ -160,7 +177,8 @@ public class RadarService extends AccessibilityService {
         {
             Rect r = new Rect(); node.getBoundsInScreen(r);
             int w = r.width(), h = r.height();
-            if (w >= 60 && w <= 210 && h >= 60 && h <= 210
+            int topZone = (int) (getResources().getDisplayMetrics().heightPixels * 0.10);
+            if (r.centerY() > topZone && w >= 60 && w <= 210 && h >= 60 && h <= 210
                     && Math.abs(w - h) <= Math.max(w, h) * 0.3) {
                 boolean dup = false;
                 for (Rect a : avatarCandidates) if (Math.abs(a.left - r.left) < 6 && Math.abs(a.top - r.top) < 6) { dup = true; break; }
@@ -177,11 +195,19 @@ public class RadarService extends AccessibilityService {
                 Data.Caste caste = data.casteOf(handle);
                 if (caste != Data.Caste.SELF) {
                     Rect post = postBounds(node);
-                    if (post != null) posts.add(new Post(handle, caste, post));
+                    if (post != null) {
+                        Rect nb = new Rect(); node.getBoundsInScreen(nb);
+                        posts.add(new Post(handle, caste, post, nb));
+                    }
                 }
             }
         }
         for (int i = 0; i < node.getChildCount(); i++) walk(node.getChild(i));
+    }
+
+    private static long dist2(Rect a, Rect b) {
+        long dx = a.centerX() - b.centerX(), dy = a.centerY() - b.centerY();
+        return dx * dx + dy * dy;
     }
 
     /** The post cell is the first near-full-width container above the handle. */
