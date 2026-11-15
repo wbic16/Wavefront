@@ -41,7 +41,7 @@ public class RadarService extends AccessibilityService {
         Post(String h, Data.Caste c, Rect r) { handle = h; caste = c; rect = r; }
     }
     private final List<Post> posts = new ArrayList<>();
-    private final List<Rect> grokButtons = new ArrayList<>();
+    private final List<Rect> avatarCandidates = new ArrayList<>();
 
     private final Runnable heartbeat = new Runnable() {
         @Override public void run() {
@@ -57,7 +57,7 @@ public class RadarService extends AccessibilityService {
         } catch (Exception e) { return false; }
     }
     private void clearAll() {
-        if (fx != null && badgeShown) { fx.clearBadges(); badgeShown = false; }
+        if (fx != null && badgeShown) { fx.clearHalos(); badgeShown = false; }
     }
 
     @Override protected void onServiceConnected() {
@@ -98,28 +98,30 @@ public class RadarService extends AccessibilityService {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null || !"com.twitter.android".contentEquals(root.getPackageName())) { clearAll(); return; }
         budget = 900; scanNodes = 0; scanHandles = 0;
-        posts.clear(); grokButtons.clear();
+        posts.clear(); avatarCandidates.clear();
         walk(root);
         lastNodes = scanNodes; lastHandles = scanHandles; lastScanAt = now;
         if (fx == null) return;
-        List<EffectsView.Badge> badges = new ArrayList<>();
+        List<EffectsView.Halo> halos = new ArrayList<>();
         for (Post p : posts) {
-            Rect anchor = null;
-            for (Rect g : grokButtons) {
-                if (g.centerX() >= p.rect.left && g.centerX() <= p.rect.right
-                        && g.centerY() >= p.rect.top && g.centerY() <= p.rect.bottom) { anchor = g; break; }
+            Rect pfp = null; long bestScore = Long.MAX_VALUE;
+            for (Rect a : avatarCandidates) {
+                if (a.centerX() < p.rect.left || a.centerX() > p.rect.right
+                        || a.centerY() < p.rect.top || a.centerY() > p.rect.bottom) continue;
+                long score = (long) (a.left - p.rect.left) * 4 + (a.top - p.rect.top);
+                if (score < bestScore) { bestScore = score; pfp = a; }
             }
-            if (anchor == null) anchor = new Rect(p.rect.right - 90, p.rect.top + 6, p.rect.right - 10, p.rect.top + 46);
-            badges.add(new EffectsView.Badge(p.handle, p.caste, anchor));
+            if (pfp == null) continue;
+            halos.add(new EffectsView.Halo(p.caste, pfp));
             if ((p.caste == Data.Caste.MOOT || p.caste == Data.Caste.ALIGNED)
                     && celebrated.add(p.handle.toLowerCase())) {
                 data.logEncounter(p.handle, p.caste.name().toLowerCase());
-                if (p.caste == Data.Caste.MOOT) fx.burstBelow(anchor, p.handle);
+                if (p.caste == Data.Caste.MOOT) fx.burst(pfp.centerX(), pfp.centerY());
             }
         }
-        lastMarks = badges.size();
-        if (badges.isEmpty()) { clearAll(); return; }
-        fx.setBadges(badges);
+        lastMarks = halos.size();
+        if (halos.isEmpty()) { clearAll(); return; }
+        fx.setHalos(halos);
         badgeShown = true;
     }
 
@@ -127,9 +129,17 @@ public class RadarService extends AccessibilityService {
         if (node == null || budget-- <= 0) return;
         scanNodes++;
         CharSequence desc = node.getContentDescription();
-        if (desc != null && desc.toString().contains("Grok")) {
+        // profile pictures are squarish image-sized nodes; collect them
+        // all and let each post claim the one nearest its top-left
+        {
             Rect r = new Rect(); node.getBoundsInScreen(r);
-            if (r.width() > 0) grokButtons.add(r);
+            int w = r.width(), h = r.height();
+            if (w >= 60 && w <= 210 && h >= 60 && h <= 210
+                    && Math.abs(w - h) <= Math.max(w, h) * 0.3) {
+                boolean dup = false;
+                for (Rect a : avatarCandidates) if (Math.abs(a.left - r.left) < 6 && Math.abs(a.top - r.top) < 6) { dup = true; break; }
+                if (!dup) avatarCandidates.add(r);
+            }
         }
         CharSequence text = node.getText();
         if (text == null) text = desc;
