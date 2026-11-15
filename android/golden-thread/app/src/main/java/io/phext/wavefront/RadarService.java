@@ -41,7 +41,7 @@ public class RadarService extends AccessibilityService {
         Post(String h, Data.Caste c, Rect r) { handle = h; caste = c; rect = r; }
     }
     private final List<Post> posts = new ArrayList<>();
-    private Rect grokAnchor = null;
+    private final List<Rect> grokButtons = new ArrayList<>();
 
     private final Runnable heartbeat = new Runnable() {
         @Override public void run() {
@@ -57,7 +57,7 @@ public class RadarService extends AccessibilityService {
         } catch (Exception e) { return false; }
     }
     private void clearAll() {
-        if (fx != null && badgeShown) { fx.clearBadge(); badgeShown = false; }
+        if (fx != null && badgeShown) { fx.clearBadges(); badgeShown = false; }
     }
 
     @Override protected void onServiceConnected() {
@@ -98,37 +98,38 @@ public class RadarService extends AccessibilityService {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null || !"com.twitter.android".contentEquals(root.getPackageName())) { clearAll(); return; }
         budget = 900; scanNodes = 0; scanHandles = 0;
-        posts.clear(); grokAnchor = null;
+        posts.clear(); grokButtons.clear();
         walk(root);
         lastNodes = scanNodes; lastHandles = scanHandles; lastScanAt = now;
-        int midY = getResources().getDisplayMetrics().heightPixels / 2;
-        Post primary = null;
-        for (Post p : posts) if (p.rect.top <= midY && p.rect.bottom >= midY) { primary = p; break; }
-        if (primary == null) {
-            for (Post p : posts) if (primary == null || p.rect.top < primary.rect.top) {
-                if (p.rect.bottom > 0) primary = p;
+        if (fx == null) return;
+        List<EffectsView.Badge> badges = new ArrayList<>();
+        for (Post p : posts) {
+            Rect anchor = null;
+            for (Rect g : grokButtons) {
+                if (g.centerX() >= p.rect.left && g.centerX() <= p.rect.right
+                        && g.centerY() >= p.rect.top && g.centerY() <= p.rect.bottom) { anchor = g; break; }
+            }
+            if (anchor == null) anchor = new Rect(p.rect.right - 90, p.rect.top + 6, p.rect.right - 10, p.rect.top + 46);
+            badges.add(new EffectsView.Badge(p.handle, p.caste, anchor));
+            if ((p.caste == Data.Caste.MOOT || p.caste == Data.Caste.ALIGNED)
+                    && celebrated.add(p.handle.toLowerCase())) {
+                data.logEncounter(p.handle, p.caste.name().toLowerCase());
+                if (p.caste == Data.Caste.MOOT) fx.burstBelow(anchor, p.handle);
             }
         }
-        lastMarks = primary == null ? 0 : 1;
-        if (fx == null) return;
-        if (primary == null) { clearAll(); return; }
-        fx.setBadge(primary.handle, primary.caste, grokAnchor);
+        lastMarks = badges.size();
+        if (badges.isEmpty()) { clearAll(); return; }
+        fx.setBadges(badges);
         badgeShown = true;
-        if ((primary.caste == Data.Caste.MOOT || primary.caste == Data.Caste.ALIGNED)
-                && celebrated.add(primary.handle.toLowerCase())) {
-            data.logEncounter(primary.handle, primary.caste.name().toLowerCase());
-            float[] c = fx.badgeCenter();
-            if (c != null) fx.burst(c[0], c[1]);
-        }
     }
 
     private void walk(AccessibilityNodeInfo node) {
         if (node == null || budget-- <= 0) return;
         scanNodes++;
         CharSequence desc = node.getContentDescription();
-        if (desc != null && "Grok".contentEquals(desc)) {
+        if (desc != null && desc.toString().contains("Grok")) {
             Rect r = new Rect(); node.getBoundsInScreen(r);
-            if (r.width() > 0) grokAnchor = r;
+            if (r.width() > 0) grokButtons.add(r);
         }
         CharSequence text = node.getText();
         if (text == null) text = desc;
