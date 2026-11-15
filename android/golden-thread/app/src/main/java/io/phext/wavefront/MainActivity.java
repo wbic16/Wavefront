@@ -26,8 +26,10 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(40, 48, 40, 40);
 
+        String ver = "?";
+        try { ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) {}
         TextView title = new TextView(this);
-        title.setText("✦ Golden Thread"); title.setTextSize(22); title.setTextColor(0xFFD4A017);
+        title.setText("✦ Golden Thread  v" + ver); title.setTextSize(22); title.setTextColor(0xFFD4A017);
         root.addView(title);
         TextView sub = new TextView(this);
         sub.setText("The OG Wavefront rides over the X app: a floating flame, today's prune, and your memory of the moots — one canon, shared with the Win11 Chrome extension.");
