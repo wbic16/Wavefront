@@ -19,6 +19,8 @@ import java.util.regex.Pattern;
  *  On-device only; nothing is transmitted anywhere. */
 public class RadarService extends AccessibilityService {
     public static volatile boolean connected = false;
+    public static volatile int lastNodes = 0, lastHandles = 0, lastMarks = 0;
+    public static volatile long lastScanAt = 0;
     private static final Pattern HANDLE = Pattern.compile("@([A-Za-z0-9_]{1,15})");
     private WindowManager wm;
     private EffectsView fx;
@@ -26,6 +28,7 @@ public class RadarService extends AccessibilityService {
     private long lastRun = 0;
     private final Set<String> celebrated = new HashSet<>();
     private int budget;
+    private int scanNodes = 0, scanHandles = 0;
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
@@ -40,6 +43,13 @@ public class RadarService extends AccessibilityService {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT);
         try { wm.addView(fx, lp); } catch (Exception ignored) {}
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            if (fx != null) {
+                int w = getResources().getDisplayMetrics().widthPixels;
+                int h = getResources().getDisplayMetrics().heightPixels;
+                fx.burst(w * 0.5f, h * 0.35f);
+            }
+        }, 700);
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
@@ -50,19 +60,25 @@ public class RadarService extends AccessibilityService {
         lastRun = now;
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return;
-        budget = 700;
+        budget = 900;
+        scanNodes = 0; scanHandles = 0;
         List<EffectsView.Mark> marks = new ArrayList<>();
         Set<String> seenRects = new HashSet<>();
         walk(root, marks, seenRects);
+        lastNodes = scanNodes; lastHandles = scanHandles; lastMarks = marks.size();
+        lastScanAt = now;
         if (fx != null) fx.setMarks(marks);
     }
 
     private void walk(AccessibilityNodeInfo node, List<EffectsView.Mark> marks, Set<String> seenRects) {
         if (node == null || budget-- <= 0) return;
+        scanNodes++;
         CharSequence text = node.getText();
-        if (text != null && text.length() > 1 && text.length() < 80) {
+        if (text == null) text = node.getContentDescription();
+        if (text != null && text.length() > 1 && text.length() < 220) {
             Matcher m = HANDLE.matcher(text);
             if (m.find()) {
+                scanHandles++;
                 String handle = m.group(1);
                 Data.Caste caste = data.casteOf(handle);
                 if (caste != Data.Caste.SELF) {

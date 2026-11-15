@@ -82,6 +82,8 @@ public class MainActivity extends Activity {
     private void refreshStatus() {
         boolean can = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this);
         status.setText("Moot Radar: " + (RadarService.connected ? "on — feed effects live" : "off (enable in Accessibility)")
+                + "\nLast radar scan: " + (RadarService.lastScanAt == 0 ? "none yet"
+                        : (RadarService.lastNodes + " nodes, " + RadarService.lastHandles + " handles, " + RadarService.lastMarks + " marks"))
                 + "\nOverlay permission: " + (can ? "granted" : "not granted")
                 + " · moots in canon: " + data.moots.length()
                 + " · prune pool: " + data.prune.length());
