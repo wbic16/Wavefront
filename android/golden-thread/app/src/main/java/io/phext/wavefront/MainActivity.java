@@ -62,6 +62,9 @@ public class MainActivity extends Activity {
         look.setOnClickListener(v -> showCard(field.getText().toString()));
         root.addView(look); root.addView(cardOut);
 
+        Button radar = new Button(this); radar.setText("Enable Moot Radar (accessibility) — feed effects while you scroll X");
+        radar.setOnClickListener(v -> startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        root.addView(radar);
         Button export = new Button(this); export.setText("Share state (encounters · srs · prune)");
         export.setOnClickListener(v -> {
             Intent i = new Intent(Intent.ACTION_SEND);
@@ -78,7 +81,8 @@ public class MainActivity extends Activity {
     @Override protected void onResume() { super.onResume(); refreshStatus(); }
     private void refreshStatus() {
         boolean can = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this);
-        status.setText("Overlay permission: " + (can ? "granted" : "not granted")
+        status.setText("Moot Radar: " + (RadarService.connected ? "on — feed effects live" : "off (enable in Accessibility)")
+                + "\nOverlay permission: " + (can ? "granted" : "not granted")
                 + " · moots in canon: " + data.moots.length()
                 + " · prune pool: " + data.prune.length());
     }

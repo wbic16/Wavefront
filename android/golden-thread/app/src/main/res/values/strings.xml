@@ -1,1 +1,1 @@
-<resources><string name="app_name">Golden Thread</string></resources>
+<resources><string name="app_name">Golden Thread</string><string name="radar_desc">Golden Thread Moot Radar: watches the X app for accounts from Will's canon and draws their caste effects (gold for moots, RGB for aligned follows, veils for the rest). All processing happens on this phone; nothing is sent anywhere.</string></resources>
