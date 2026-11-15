@@ -42,6 +42,7 @@ public class OverlayService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        RadarService.overlayOn = true;
         data = Data.get(this);
         startForegroundWithNotification();
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -230,6 +231,8 @@ public class OverlayService extends Service {
     }
 
     @Override public void onDestroy() {
+        RadarService.overlayOn = false;
+        RadarService.overlayStopped();
         if (bubble != null) wm.removeView(bubble);
         hidePanel();
         super.onDestroy();

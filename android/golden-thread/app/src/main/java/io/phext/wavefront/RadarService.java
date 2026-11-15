@@ -19,6 +19,9 @@ import java.util.regex.Pattern;
  *  On-device only; nothing is transmitted anywhere. */
 public class RadarService extends AccessibilityService {
     public static volatile boolean connected = false;
+    public static volatile boolean overlayOn = false;
+    private static volatile RadarService instance = null;
+    public static void overlayStopped() { if (instance != null) instance.clearAll(); }
     public static volatile int lastNodes = 0, lastHandles = 0, lastMarks = 0;
     public static volatile long lastScanAt = 0;
     private static final Pattern HANDLE = Pattern.compile("@([A-Za-z0-9_]{1,15})");
@@ -30,9 +33,30 @@ public class RadarService extends AccessibilityService {
     private int budget;
     private int scanNodes = 0, scanHandles = 0;
 
+    private final android.os.Handler ui = new android.os.Handler(android.os.Looper.getMainLooper());
+    private boolean scrolling = false;
+    private boolean marksShown = false;
+    private final Runnable rescan = () -> { scrolling = false; scan(true); };
+    private final Runnable heartbeat = new Runnable() {
+        @Override public void run() {
+            if (!overlayOn || !xInForeground()) clearAll();
+            ui.postDelayed(this, 800);
+        }
+    };
+    private boolean xInForeground() {
+        try {
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            return root != null && "com.twitter.android".contentEquals(root.getPackageName());
+        } catch (Exception e) { return false; }
+    }
+    private void clearAll() {
+        if (fx != null && marksShown) { fx.setMarks(new ArrayList<>()); marksShown = false; }
+    }
+
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
         connected = true;
+        instance = this;
         data = Data.get(this);
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         fx = new EffectsView(this);
@@ -50,16 +74,30 @@ public class RadarService extends AccessibilityService {
                 fx.burst(w * 0.5f, h * 0.35f);
             }
         }, 700);
+        ui.postDelayed(heartbeat, 900);
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null || event.getPackageName() == null) return;
         if (!"com.twitter.android".contentEquals(event.getPackageName())) return;
+        if (!overlayOn) { clearAll(); return; }
+        if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+            scrolling = true;
+            clearAll();
+            ui.removeCallbacks(rescan);
+            ui.postDelayed(rescan, 300);
+            return;
+        }
+        if (scrolling) return;
+        scan(false);
+    }
+
+    private void scan(boolean force) {
         long now = System.currentTimeMillis();
-        if (now - lastRun < 250) return;
+        if (!force && now - lastRun < 250) return;
         lastRun = now;
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root == null) return;
+        if (root == null || !"com.twitter.android".contentEquals(root.getPackageName())) { clearAll(); return; }
         budget = 900;
         scanNodes = 0; scanHandles = 0;
         List<EffectsView.Mark> marks = new ArrayList<>();
@@ -67,7 +105,7 @@ public class RadarService extends AccessibilityService {
         walk(root, marks, seenRects);
         lastNodes = scanNodes; lastHandles = scanHandles; lastMarks = marks.size();
         lastScanAt = now;
-        if (fx != null) fx.setMarks(marks);
+        if (fx != null) { fx.setMarks(marks); marksShown = !marks.isEmpty(); }
     }
 
     private void walk(AccessibilityNodeInfo node, List<EffectsView.Mark> marks, Set<String> seenRects) {
@@ -123,6 +161,8 @@ public class RadarService extends AccessibilityService {
     @Override public void onInterrupt() {}
     @Override public void onDestroy() {
         connected = false;
+        instance = null;
+        ui.removeCallbacksAndMessages(null);
         if (fx != null && wm != null) { try { wm.removeView(fx); } catch (Exception ignored) {} }
         super.onDestroy();
     }

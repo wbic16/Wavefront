@@ -44,15 +44,19 @@ public class EffectsView extends View {
         for (Mark m : marks) {
             switch (m.caste) {
                 case MOOT:
-                    paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(5f);
-                    paint.setColor(0xFFD4A017); paint.setAlpha(235);
+                    paint.setStyle(Paint.Style.STROKE);
+                    paint.setColor(0xFFD4A017); paint.setAlpha(80); paint.setStrokeWidth(34f);
                     canvas.drawRect(m.rect, paint);
-                    paint.setStrokeWidth(14f); paint.setAlpha(50);
+                    paint.setAlpha(255); paint.setStrokeWidth(10f);
+                    canvas.drawRect(m.rect, paint);
+                    paint.setColor(0xFFFFF3C4); paint.setAlpha(210); paint.setStrokeWidth(3f);
                     canvas.drawRect(m.rect, paint);
                     break;
                 case ALIGNED:
-                    paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(5f);
-                    paint.setAlpha(220); paint.setColor(0xFF7AC74F);
+                    paint.setStyle(Paint.Style.STROKE);
+                    paint.setColor(0xFF7AC74F); paint.setAlpha(60); paint.setStrokeWidth(26f);
+                    canvas.drawRect(m.rect, paint);
+                    paint.setAlpha(240); paint.setStrokeWidth(8f);
                     canvas.drawRect(m.rect, paint);
                     break;
                 case MUTED:
