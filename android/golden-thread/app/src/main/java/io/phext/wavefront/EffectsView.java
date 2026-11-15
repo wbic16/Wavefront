@@ -5,21 +5,22 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.view.View;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-/** One full-screen transparent canvas for the Moot Radar: gold frames
- *  for moots, RGB frames for aligned follows, translucent veils that
- *  mute the unaligned and half-erase the chaff, and fireworks when a
- *  moot scrolls into view. Drawn from a model the RadarService updates. */
+/** The badge canvas (v1.4): no more post boxes. One small pill badge,
+ *  anchored just below the X app's Grok button, showing the caste of
+ *  the post in view: gold for a moot, green for an aligned follow,
+ *  grey for the unaligned, faint for the chaff. Fireworks live here
+ *  too, fired from the badge when a moot first scrolls into view. */
 public class EffectsView extends View {
-    public static class Mark {
-        public final Rect rect; public final Data.Caste caste;
-        Mark(Rect r, Data.Caste c) { rect = r; caste = c; }
-    }
-    private final List<Mark> marks = new ArrayList<>();
+    private String handle = null;
+    private Data.Caste caste = null;
+    private Rect anchor = null; // the Grok button's bounds, when found
+    private long fadeStart = 0;
     private final List<float[]> parts = new ArrayList<>();
     private final Paint paint = new Paint();
     private final Random rnd = new Random();
@@ -27,15 +28,18 @@ public class EffectsView extends View {
 
     public EffectsView(Context c) { super(c); setWillNotDraw(false); }
 
-    private int yShift = 0;
-    private long fadeStart = 0;
-    public synchronized void setMarks(List<Mark> m) {
-        marks.clear(); marks.addAll(m);
-        yShift = 0;
-        fadeStart = System.currentTimeMillis();
+    public synchronized void setBadge(String h, Data.Caste c, Rect grokAnchor) {
+        boolean changed = h == null ? handle != null : !h.equals(handle);
+        handle = h; caste = c;
+        if (grokAnchor != null) anchor = new Rect(grokAnchor);
+        if (changed) fadeStart = System.currentTimeMillis();
         invalidate();
     }
-    public synchronized void shift(int dy) { yShift += dy; invalidate(); }
+    public synchronized void clearBadge() { handle = null; caste = null; invalidate(); }
+    public synchronized float[] badgeCenter() {
+        RectF r = badgeRect();
+        return r == null ? null : new float[]{r.centerX(), r.centerY()};
+    }
     public synchronized void burst(float cx, float cy) {
         for (int i = 0; i < 40; i++) {
             double a = rnd.nextDouble() * Math.PI * 2, sp = 3 + rnd.nextDouble() * 9;
@@ -45,37 +49,49 @@ public class EffectsView extends View {
         invalidate();
     }
 
+    private RectF badgeRect() {
+        if (handle == null) return null;
+        int w = getWidth(), h = getHeight();
+        if (w == 0) return null;
+        paint.setTextSize(30f);
+        String label = "✦ @" + handle;
+        float tw = paint.measureText(label);
+        float bw = tw + 56f, bh = 52f;
+        float cx = anchor != null ? anchor.centerX() : w / 2f;
+        float left = Math.max(8f, Math.min(cx - bw / 2f, w - bw - 8f));
+        float top;
+        if (anchor != null && anchor.bottom + 10 + bh <= h) top = anchor.bottom + 10;
+        else top = h - bh - 150; // fallback: float above the bottom nav
+        return new RectF(left, top, left + bw, top + bh);
+    }
+
+    private int casteColor() {
+        if (caste == null) return Color.GRAY;
+        switch (caste) {
+            case MOOT: return 0xFFD4A017;
+            case ALIGNED: return 0xFF7AC74F;
+            case MUTED: return 0xFF9A9A9A;
+            default: return 0xFF555555;
+        }
+    }
+
     @Override protected synchronized void onDraw(Canvas canvas) {
-        float fade = marks.isEmpty() ? 1f : Math.min(1f, (System.currentTimeMillis() - fadeStart) / 150f);
-        for (Mark m0 : marks) {
-            Mark m = new Mark(new Rect(m0.rect.left, m0.rect.top + yShift, m0.rect.right, m0.rect.bottom + yShift), m0.caste);
-            switch (m.caste) {
-                case MOOT:
-                    paint.setStyle(Paint.Style.STROKE);
-                    paint.setColor(0xFFD4A017); paint.setAlpha((int) (80 * fade)); paint.setStrokeWidth(34f);
-                    canvas.drawRect(m.rect, paint);
-                    paint.setAlpha((int) (255 * fade)); paint.setStrokeWidth(10f);
-                    canvas.drawRect(m.rect, paint);
-                    paint.setColor(0xFFFFF3C4); paint.setAlpha((int) (210 * fade)); paint.setStrokeWidth(3f);
-                    canvas.drawRect(m.rect, paint);
-                    break;
-                case ALIGNED:
-                    paint.setStyle(Paint.Style.STROKE);
-                    paint.setColor(0xFF7AC74F); paint.setAlpha((int) (60 * fade)); paint.setStrokeWidth(26f);
-                    canvas.drawRect(m.rect, paint);
-                    paint.setAlpha((int) (240 * fade)); paint.setStrokeWidth(8f);
-                    canvas.drawRect(m.rect, paint);
-                    break;
-                case MUTED:
-                    paint.setStyle(Paint.Style.FILL); paint.setColor(Color.GRAY); paint.setAlpha((int) (66 * fade));
-                    canvas.drawRect(m.rect, paint);
-                    break;
-                case CHAFF:
-                    paint.setStyle(Paint.Style.FILL); paint.setColor(0xFF0A0A0A); paint.setAlpha((int) (104 * fade));
-                    canvas.drawRect(m.rect, paint);
-                    break;
-                default: break;
-            }
+        RectF r = badgeRect();
+        if (r != null) {
+            float fade = Math.min(1f, (System.currentTimeMillis() - fadeStart) / 150f);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0xFF101010); paint.setAlpha((int) (215 * fade));
+            canvas.drawRoundRect(r, 26f, 26f, paint);
+            paint.setColor(casteColor()); paint.setAlpha((int) (255 * fade));
+            paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(3f);
+            canvas.drawRoundRect(r, 26f, 26f, paint);
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(r.left + 28f, r.centerY(), 10f, paint);
+            paint.setColor(Color.WHITE); paint.setAlpha((int) (240 * fade));
+            paint.setTextSize(30f);
+            float ty = r.centerY() - (paint.descent() + paint.ascent()) / 2f;
+            canvas.drawText("✦ @" + handle, r.left + 48f, ty, paint);
+            if (fade < 1f) postInvalidateDelayed(16);
         }
         paint.setStyle(Paint.Style.FILL);
         parts.removeIf(pt -> pt[4] <= 0);
@@ -85,6 +101,6 @@ public class EffectsView extends View {
             paint.setAlpha(Math.max(0, Math.min(255, (int) (pt[4] * 255))));
             canvas.drawCircle(pt[0], pt[1], pt[6], paint);
         }
-        if (!parts.isEmpty() || fade < 1f) postInvalidateDelayed(16);
+        if (!parts.isEmpty()) postInvalidateDelayed(16);
     }
 }

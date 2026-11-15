@@ -13,36 +13,43 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** The Moot Radar: an accessibility service scoped to the X app only.
- *  It reads the handles already on screen, classifies them against the
- *  canon, and draws caste effects at their posts' screen positions.
- *  On-device only; nothing is transmitted anywhere. */
+/** The Moot Radar (v1.4 badge design): an accessibility service scoped
+ *  to the X app only. It reads the handles already on screen, finds the
+ *  post at the centre of the view, and shows its caste as one small
+ *  badge anchored just below the Grok button. No post boxes — the
+ *  boxes never aligned. On-device only; nothing is transmitted. */
 public class RadarService extends AccessibilityService {
     public static volatile boolean connected = false;
     public static volatile boolean overlayOn = false;
-    private static volatile RadarService instance = null;
-    public static void overlayStopped() { if (instance != null) instance.clearAll(); }
     public static volatile int lastNodes = 0, lastHandles = 0, lastMarks = 0;
     public static volatile long lastScanAt = 0;
+    private static volatile RadarService instance = null;
+    public static void overlayStopped() { if (instance != null) instance.clearAll(); }
+
     private static final Pattern HANDLE = Pattern.compile("@([A-Za-z0-9_]{1,15})");
     private WindowManager wm;
     private EffectsView fx;
     private Data data;
     private long lastRun = 0;
+    private int budget, scanNodes, scanHandles;
+    private boolean badgeShown = false;
     private final Set<String> celebrated = new HashSet<>();
-    private int budget;
-    private int scanNodes = 0, scanHandles = 0;
-
     private final android.os.Handler ui = new android.os.Handler(android.os.Looper.getMainLooper());
-    private boolean scrolling = false;
-    private boolean marksShown = false;
-    private final Runnable rescan = () -> { scrolling = false; scan(true); };
+
+    private static class Post {
+        String handle; Data.Caste caste; Rect rect;
+        Post(String h, Data.Caste c, Rect r) { handle = h; caste = c; rect = r; }
+    }
+    private final List<Post> posts = new ArrayList<>();
+    private Rect grokAnchor = null;
+
     private final Runnable heartbeat = new Runnable() {
         @Override public void run() {
             if (!overlayOn || !xInForeground()) clearAll();
             ui.postDelayed(this, 800);
         }
     };
+
     private boolean xInForeground() {
         try {
             AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -50,7 +57,7 @@ public class RadarService extends AccessibilityService {
         } catch (Exception e) { return false; }
     }
     private void clearAll() {
-        if (fx != null && marksShown) { fx.setMarks(new ArrayList<>()); marksShown = false; }
+        if (fx != null && badgeShown) { fx.clearBadge(); badgeShown = false; }
     }
 
     @Override protected void onServiceConnected() {
@@ -67,7 +74,7 @@ public class RadarService extends AccessibilityService {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT);
         try { wm.addView(fx, lp); } catch (Exception ignored) {}
-        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+        ui.postDelayed(() -> {
             if (fx != null) {
                 int w = getResources().getDisplayMetrics().widthPixels;
                 int h = getResources().getDisplayMetrics().heightPixels;
@@ -81,13 +88,6 @@ public class RadarService extends AccessibilityService {
         if (event == null || event.getPackageName() == null) return;
         if (!"com.twitter.android".contentEquals(event.getPackageName())) return;
         if (!overlayOn) { clearAll(); return; }
-        if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
-            int dy = event.getScrollDeltaY();
-            if (dy != 0 && fx != null) fx.shift(-dy);
-            ui.removeCallbacks(rescan);
-            ui.postDelayed(rescan, 140);
-            return;
-        }
         scan(false);
     }
 
@@ -97,21 +97,41 @@ public class RadarService extends AccessibilityService {
         lastRun = now;
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null || !"com.twitter.android".contentEquals(root.getPackageName())) { clearAll(); return; }
-        budget = 900;
-        scanNodes = 0; scanHandles = 0;
-        List<EffectsView.Mark> marks = new ArrayList<>();
-        Set<String> seenRects = new HashSet<>();
-        walk(root, marks, seenRects);
-        lastNodes = scanNodes; lastHandles = scanHandles; lastMarks = marks.size();
-        lastScanAt = now;
-        if (fx != null) { fx.setMarks(marks); marksShown = !marks.isEmpty(); }
+        budget = 900; scanNodes = 0; scanHandles = 0;
+        posts.clear(); grokAnchor = null;
+        walk(root);
+        lastNodes = scanNodes; lastHandles = scanHandles; lastScanAt = now;
+        int midY = getResources().getDisplayMetrics().heightPixels / 2;
+        Post primary = null;
+        for (Post p : posts) if (p.rect.top <= midY && p.rect.bottom >= midY) { primary = p; break; }
+        if (primary == null) {
+            for (Post p : posts) if (primary == null || p.rect.top < primary.rect.top) {
+                if (p.rect.bottom > 0) primary = p;
+            }
+        }
+        lastMarks = primary == null ? 0 : 1;
+        if (fx == null) return;
+        if (primary == null) { clearAll(); return; }
+        fx.setBadge(primary.handle, primary.caste, grokAnchor);
+        badgeShown = true;
+        if ((primary.caste == Data.Caste.MOOT || primary.caste == Data.Caste.ALIGNED)
+                && celebrated.add(primary.handle.toLowerCase())) {
+            data.logEncounter(primary.handle, primary.caste.name().toLowerCase());
+            float[] c = fx.badgeCenter();
+            if (c != null) fx.burst(c[0], c[1]);
+        }
     }
 
-    private void walk(AccessibilityNodeInfo node, List<EffectsView.Mark> marks, Set<String> seenRects) {
+    private void walk(AccessibilityNodeInfo node) {
         if (node == null || budget-- <= 0) return;
         scanNodes++;
+        CharSequence desc = node.getContentDescription();
+        if (desc != null && "Grok".contentEquals(desc)) {
+            Rect r = new Rect(); node.getBoundsInScreen(r);
+            if (r.width() > 0) grokAnchor = r;
+        }
         CharSequence text = node.getText();
-        if (text == null) text = node.getContentDescription();
+        if (text == null) text = desc;
         if (text != null && text.length() > 1 && text.length() < 220) {
             Matcher m = HANDLE.matcher(text);
             if (m.find()) {
@@ -120,22 +140,14 @@ public class RadarService extends AccessibilityService {
                 Data.Caste caste = data.casteOf(handle);
                 if (caste != Data.Caste.SELF) {
                     Rect post = postBounds(node);
-                    if (post != null) {
-                        String key = post.left + ":" + post.top + ":" + post.bottom;
-                        if (seenRects.add(key)) marks.add(new EffectsView.Mark(post, caste));
-                        if ((caste == Data.Caste.MOOT || caste == Data.Caste.ALIGNED)
-                                && celebrated.add(handle.toLowerCase())) {
-                            data.logEncounter(handle, caste.name().toLowerCase());
-                            if (fx != null) fx.burst(post.centerX(), post.top + 40);
-                        }
-                    }
+                    if (post != null) posts.add(new Post(handle, caste, post));
                 }
             }
         }
-        for (int i = 0; i < node.getChildCount(); i++) walk(node.getChild(i), marks, seenRects);
+        for (int i = 0; i < node.getChildCount(); i++) walk(node.getChild(i));
     }
 
-    /** Climb from the handle node to the enclosing post-sized container. */
+    /** The post cell is the first near-full-width container above the handle. */
     private Rect postBounds(AccessibilityNodeInfo node) {
         int screenW = getResources().getDisplayMetrics().widthPixels;
         int screenH = getResources().getDisplayMetrics().heightPixels;
@@ -144,8 +156,6 @@ public class RadarService extends AccessibilityService {
         for (int depth = 0; depth < 7 && cur != null; depth++) {
             Rect r = new Rect();
             cur.getBoundsInScreen(r);
-            // the post cell is the FIRST near-full-width container on the
-            // climb; taking a larger ancestor swallows neighbouring posts
             if (r.width() >= screenW * 0.88 && r.height() >= 100 && r.height() <= screenH * 0.55) return r;
             if (r.width() >= screenW * 0.55 && r.height() >= 110 && r.height() <= screenH * 0.62) best = r;
             cur = cur.getParent();
