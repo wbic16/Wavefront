@@ -4,5 +4,5 @@
     android:packageNames="com.twitter.android"
     android:accessibilityEventTypes="typeWindowContentChanged|typeViewScrolled|typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:notificationTimeout="120"
+    android:notificationTimeout="40"
     android:canRetrieveWindowContent="true"/>

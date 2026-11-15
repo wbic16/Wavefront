@@ -82,19 +82,18 @@ public class RadarService extends AccessibilityService {
         if (!"com.twitter.android".contentEquals(event.getPackageName())) return;
         if (!overlayOn) { clearAll(); return; }
         if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
-            scrolling = true;
-            clearAll();
+            int dy = event.getScrollDeltaY();
+            if (dy != 0 && fx != null) fx.shift(-dy);
             ui.removeCallbacks(rescan);
-            ui.postDelayed(rescan, 300);
+            ui.postDelayed(rescan, 140);
             return;
         }
-        if (scrolling) return;
         scan(false);
     }
 
     private void scan(boolean force) {
         long now = System.currentTimeMillis();
-        if (!force && now - lastRun < 250) return;
+        if (!force && now - lastRun < 90) return;
         lastRun = now;
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null || !"com.twitter.android".contentEquals(root.getPackageName())) { clearAll(); return; }
@@ -145,8 +144,10 @@ public class RadarService extends AccessibilityService {
         for (int depth = 0; depth < 7 && cur != null; depth++) {
             Rect r = new Rect();
             cur.getBoundsInScreen(r);
+            // the post cell is the FIRST near-full-width container on the
+            // climb; taking a larger ancestor swallows neighbouring posts
+            if (r.width() >= screenW * 0.88 && r.height() >= 100 && r.height() <= screenH * 0.55) return r;
             if (r.width() >= screenW * 0.55 && r.height() >= 110 && r.height() <= screenH * 0.62) best = r;
-            if (r.width() >= screenW * 0.92 && best != null) break;
             cur = cur.getParent();
         }
         if (best == null) {
