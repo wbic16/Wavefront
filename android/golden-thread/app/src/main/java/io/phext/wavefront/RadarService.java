@@ -23,6 +23,7 @@ public class RadarService extends AccessibilityService {
     public static volatile boolean overlayOn = false;
     public static volatile int lastNodes = 0, lastHandles = 0, lastMarks = 0;
     public static volatile long lastScanAt = 0;
+    public static volatile String lastDebug = "(no scan yet)";
     private static volatile RadarService instance = null;
     public static void overlayStopped() { if (instance != null) instance.clearAll(); }
 
@@ -43,6 +44,8 @@ public class RadarService extends AccessibilityService {
     private final List<Post> posts = new ArrayList<>();
     private final List<Rect> avatarCandidates = new ArrayList<>();
 
+    private StringBuilder dbg = null;
+    private final Runnable settle = () -> scan(true);
     private final Runnable heartbeat = new Runnable() {
         @Override public void run() {
             if (!overlayOn || !xInForeground()) clearAll();
@@ -88,6 +91,13 @@ public class RadarService extends AccessibilityService {
         if (event == null || event.getPackageName() == null) return;
         if (!"com.twitter.android".contentEquals(event.getPackageName())) return;
         if (!overlayOn) { clearAll(); return; }
+        if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+            int dy = event.getScrollDeltaY();
+            if (dy != 0 && fx != null) fx.shiftHalos(-dy);
+            ui.removeCallbacks(settle);
+            ui.postDelayed(settle, 160);
+            return;
+        }
         scan(false);
     }
 
@@ -98,6 +108,11 @@ public class RadarService extends AccessibilityService {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null || !"com.twitter.android".contentEquals(root.getPackageName())) { clearAll(); return; }
         budget = 900; scanNodes = 0; scanHandles = 0;
+        dbg = new StringBuilder();
+        dbg.append("scan ").append(new java.util.Date(now)).append(" screen ")
+           .append(getResources().getDisplayMetrics().widthPixels).append("x")
+           .append(getResources().getDisplayMetrics().heightPixels)
+           .append(" density ").append(getResources().getDisplayMetrics().density).append("\n");
         posts.clear(); avatarCandidates.clear();
         walk(root);
         lastNodes = scanNodes; lastHandles = scanHandles; lastScanAt = now;
@@ -111,6 +126,9 @@ public class RadarService extends AccessibilityService {
                 long score = (long) (a.left - p.rect.left) * 4 + (a.top - p.rect.top);
                 if (score < bestScore) { bestScore = score; pfp = a; }
             }
+            if (dbg != null && halos.size() < 14) dbg.append("post @").append(p.handle)
+                .append(" cell ").append(p.rect.toShortString())
+                .append(" pfp ").append(pfp == null ? "NONE" : pfp.toShortString()).append("\n");
             if (pfp == null) continue;
             halos.add(new EffectsView.Halo(p.caste, pfp));
             if ((p.caste == Data.Caste.MOOT || p.caste == Data.Caste.ALIGNED)
@@ -120,6 +138,14 @@ public class RadarService extends AccessibilityService {
             }
         }
         lastMarks = halos.size();
+        if (dbg != null) {
+            dbg.append("candidates: ");
+            int shown = 0;
+            for (Rect a : avatarCandidates) { if (shown++ < 18) dbg.append(a.toShortString()).append(" "); }
+            dbg.append("\nnodes ").append(scanNodes).append(" handles ").append(scanHandles)
+               .append(" posts ").append(posts.size()).append(" halos ").append(halos.size());
+            lastDebug = dbg.toString();
+        }
         if (halos.isEmpty()) { clearAll(); return; }
         fx.setHalos(halos);
         badgeShown = true;

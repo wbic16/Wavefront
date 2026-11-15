@@ -67,6 +67,14 @@ public class MainActivity extends Activity {
         Button radar = new Button(this); radar.setText("Enable Moot Radar (accessibility) — feed effects while you scroll X");
         radar.setOnClickListener(v -> startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         root.addView(radar);
+        Button dump = new Button(this); dump.setText("Share radar debug dump");
+        dump.setOnClickListener(v -> {
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("text/plain");
+            send.putExtra(Intent.EXTRA_TEXT, RadarService.lastDebug);
+            startActivity(Intent.createChooser(send, "Radar debug dump"));
+        });
+        root.addView(dump);
         Button export = new Button(this); export.setText("Share state (encounters · srs · prune)");
         export.setOnClickListener(v -> {
             Intent i = new Intent(Intent.ACTION_SEND);

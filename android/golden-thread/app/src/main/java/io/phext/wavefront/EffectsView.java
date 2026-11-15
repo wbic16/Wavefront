@@ -34,6 +34,10 @@ public class EffectsView extends View {
         invalidate();
     }
     public synchronized void clearHalos() { halos.clear(); invalidate(); }
+    public synchronized void shiftHalos(int dy) {
+        for (Halo h : halos) h.pfp.offset(0, dy);
+        invalidate();
+    }
     public synchronized void burst(float cx, float cy) {
         for (int i = 0; i < 36; i++) {
             double a = rnd.nextDouble() * Math.PI * 2, sp = 3 + rnd.nextDouble() * 8;
