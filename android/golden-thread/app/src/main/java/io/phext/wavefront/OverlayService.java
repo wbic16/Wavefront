@@ -1,6 +1,13 @@
 package io.phext.wavefront;
 
 import android.app.Notification;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.os.Handler;
+import android.os.Looper;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -109,6 +116,51 @@ public class OverlayService extends Service {
         return b;
     }
 
+    // ---- fireworks: gold bursts in a touch-through overlay window ----
+    private static class FireworksView extends View {
+        private final List<float[]> parts = new ArrayList<>();
+        private final Paint paint = new Paint();
+        private final Random rnd = new Random();
+        private final int[] colors = {0xFFFFD968, 0xFFD4A017, 0xFFFFF3C4, 0xFFFFB347};
+        FireworksView(android.content.Context c) { super(c); }
+        void burst(float cx, float cy) {
+            for (int i = 0; i < 46; i++) {
+                double a = rnd.nextDouble() * Math.PI * 2, sp = 3 + rnd.nextDouble() * 9;
+                parts.add(new float[]{cx, cy, (float) (Math.cos(a) * sp), (float) (Math.sin(a) * sp) - 3f,
+                        1f, colors[i % colors.length], 2 + rnd.nextFloat() * 3});
+            }
+            invalidate();
+        }
+        @Override protected void onDraw(Canvas canvas) {
+            parts.removeIf(pt -> pt[4] <= 0);
+            for (float[] pt : parts) {
+                pt[0] += pt[2]; pt[1] += pt[3]; pt[3] += 0.22f; pt[2] *= 0.985f; pt[3] *= 0.985f; pt[4] -= 0.018f;
+                paint.setColor((int) pt[5]);
+                paint.setAlpha(Math.max(0, Math.min(255, (int) (pt[4] * 255))));
+                canvas.drawCircle(pt[0], pt[1], pt[6], paint);
+            }
+            if (!parts.isEmpty()) postInvalidateDelayed(16);
+        }
+    }
+    private void showFireworks() {
+        final FireworksView fw = new FireworksView(this);
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type(),
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT);
+        try {
+            wm.addView(fw, lp);
+            int w = getResources().getDisplayMetrics().widthPixels;
+            int h = getResources().getDisplayMetrics().heightPixels;
+            fw.burst(w * 0.5f, h * 0.32f);
+            fw.burst(w * 0.25f, h * 0.45f);
+            fw.burst(w * 0.75f, h * 0.45f);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                try { wm.removeView(fw); } catch (Exception ignored) {}
+            }, 1500);
+        } catch (Exception ignored) {}
+    }
+
     private void showPanel() {
         panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -127,7 +179,7 @@ public class OverlayService extends Service {
                     + data.interestsLine(f == null ? new JSONObject() : f), 12, 0xFFB8A888));
             LinearLayout row = new LinearLayout(this);
             Button open = btn("Profile ↗"); open.setOnClickListener(v -> openProfile(h));
-            Button un = btn("Un-followed ✓"); un.setOnClickListener(v -> { data.decide(h, "unfollowed"); refreshPanel(); });
+            Button un = btn("Un-followed ✓"); un.setOnClickListener(v -> { data.decide(h, "unfollowed"); showFireworks(); refreshPanel(); });
             Button keep = btn("Keep"); keep.setOnClickListener(v -> { data.decide(h, "keep"); refreshPanel(); });
             Button snooze = btn("Snooze"); snooze.setOnClickListener(v -> { data.decide(h, "snooze"); refreshPanel(); });
             row.addView(open); row.addView(un); row.addView(keep); row.addView(snooze);
@@ -147,7 +199,7 @@ public class OverlayService extends Service {
             Button reveal = btn("Reveal");
             final String ints = data.interestsLine(m == null ? new JSONObject() : m);
             reveal.setOnClickListener(v -> answer.setText(ints));
-            Button knew = btn("Knew it"); knew.setOnClickListener(v -> { data.grade(card, true); refreshPanel(); });
+            Button knew = btn("Knew it"); knew.setOnClickListener(v -> { data.grade(card, true); showFireworks(); refreshPanel(); });
             Button missed = btn("Missed"); missed.setOnClickListener(v -> { data.grade(card, false); refreshPanel(); });
             row.addView(reveal); row.addView(knew); row.addView(missed);
             panel.addView(row);
@@ -155,9 +207,12 @@ public class OverlayService extends Service {
             panel.addView(line("Recall: all caught up ✦", 13, 0xFFB8A888));
         }
 
-        Button close = btn("Close");
-        close.setOnClickListener(v -> hidePanel());
-        panel.addView(close);
+        LinearLayout foot = new LinearLayout(this);
+        Button test = btn("✦ Test fireworks"); test.setOnClickListener(v -> showFireworks());
+        Button close = btn("Close panel"); close.setOnClickListener(v -> hidePanel());
+        Button stop = btn("Stop the flame"); stop.setOnClickListener(v -> stopSelf());
+        foot.addView(test); foot.addView(close); foot.addView(stop);
+        panel.addView(foot);
 
         panelParams = new WindowManager.LayoutParams(dp(320), WindowManager.LayoutParams.WRAP_CONTENT, type(),
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
